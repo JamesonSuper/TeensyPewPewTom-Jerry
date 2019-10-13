@@ -19,6 +19,7 @@ unsigned char paused = 1;
 double pausedTime = 0;
 double gameTime = 0;
 uint8_t elapsedMins = 0;
+// uint8_t wallLocations[4,5];
 uint8_t wallBuffer[504];
 
 
@@ -70,6 +71,11 @@ void draw_int(uint8_t x, uint8_t y, uint8_t value, colour_t colour, int leadingZ
 	}
 }
 
+// Given an x and y, is that pixel 1 on the current buffer
+// int isPixelOn(int pixelx, int pixely){
+
+// }
+
 ///Setup Data Direction Registers, to enable input/output
 void setupDDRS(){
 	// Right Button
@@ -97,6 +103,12 @@ void setupTimers(){
 void reset_timers(){
 	gameTime = 0;
 	timeCounter = 0;
+}
+
+void reset_char_positions(){
+	tx = LCD_X - 6, ty = LCD_Y - 9;
+	jx = 0, jy = 8;
+	reset_dir_and_speed();
 }
 
 void reset_variables(){
@@ -188,8 +200,9 @@ ISR(TIMER0_OVF_vect){
 
 
 // Start Game screen
-void startScreen(void){
+void drawstartScreen(void){
 	draw_string(12, 4, "Tom & Jerry!", FG_COLOUR);
+	draw_string(2, 20, "HIT SW3 TO START", 1);
 	draw_string(15, 32, "James Scott", FG_COLOUR);
 	draw_string(22, 41, "N9943618", FG_COLOUR);
 }
@@ -244,64 +257,66 @@ void setup_tom(){
 	reset_dir_and_speed();
 }
 
+// Checks for Tom/Jerry collision
+int tom_jerry_iscollided(){
+	int jerry_top = (int)jy, jerry_bottom = (int)jy+4, jerry_left = (int)jx, jerry_right = (int)jx+4;
+	int tom_top = (int)ty, tom_bottom = (int)ty+4, tom_left = (int)tx, tom_right = (int)tx+4;
+	if (jerry_top == tom_bottom || jerry_bottom == tom_top){
+		if (jerry_left <= tom_right && jerry_right >= tom_left){
+			SET_BIT(PORTD, 6);
+			return 1;
+		}
+	}
+	else if (jerry_left == tom_right || jerry_right == tom_left){
+		if (jerry_top <= tom_bottom && jerry_bottom >= tom_top){
+			SET_BIT(PORTD, 6);
+			return 1;
+		}
+	}
+	else {
+		CLEAR_BIT(PORTD, 6);
+		return 0;
+	}
+	return 0;
+}
+
 void move_tom(){
 	int new_x = round(tx + tdx), new_y = round(ty + tdy);
 	uint8_t bounced = 0;
-	if (new_x < 0 || new_x > 78)
-	{
+
+	if (new_x < 0 || new_x > 78){
 		bounced = 1;
 	}
-	if (new_y <= 8 || new_y >= 44)
-	{
+	if (new_y <= 8 || new_y >= 44){
 		bounced = 1;
 	}
-	if (bounced == 1)
-	{
+	if (bounced == 1){
 		reset_dir_and_speed();
 	}
-	else
-	{
+	else{
 		tx += tdx;
 		ty += tdy;
 	}
 }
 
 void jerry_movement(){
-	uint8_t bank = 0;
-	uint8_t byte = 0;
-	uint8_t collided = 0;
-	if (JoystickUpState == 1 && jy > 8)
-	{
-		bank = jy / 8;
-		byte = jy % 8;
-		
-		for (int i = jx; i < jx+5; i++)
-		{
-			if(IsBitSet(wallBuffer[jx],0)){
-				collided = 1;
-			}
-		}
-		if (collided == 0)
-		{
+	if(tom_jerry_iscollided()){
+		reset_char_positions();
+	}
+	else{
+		if (JoystickUpState == 1 && jy > 8){
 			jy = jy - 1;
 		}
-		//uint8_t temp = wallBuffer[index];
-
+		else if (JoystickDownState == 1 && jy < 43){
+			jy = jy + 1;
+		}
+		else if (JoystickLeftState == 1 && jx >= 0){
+			jx = jx - 1;
+		}
+		else if (JoystickRightState == 1 && jx < 78){
+			jx = jx + 1;
+		}
 	}
-	else if (JoystickDownState == 1 && jy < 43)
-	{
-		jy = jy + 1;
-	}
-	else if (JoystickLeftState == 1 && jx >= 0)
-	{
-		jx = jx - 1;
-	}
-	else if (JoystickRightState == 1 && jx < 78)
-	{
-		jx = jx + 1;
-	}
-	draw_int(10,35,bank,1,0);
-	draw_int(10,25,byte,1,0);
 }
 
 void statusBar(){
@@ -342,7 +357,6 @@ void copyScreenBuffer(uint8_t screen_buffer[], uint8_t wallBuffer[]){
 }
 
 int startup(){
-	draw_string(2, 20, "HIT SW3 TO START", 1);
 	if (SW3State == 0 && prevSW3State == 1){return 1;}
 	prevSW3State = SW3State;
 	return 0;
@@ -406,7 +420,7 @@ void setup() {
 	setupTimers();
 	setupDDRS();
 	
-	startScreen();
+	drawstartScreen();
 	show_screen();	
 }
 
