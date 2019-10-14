@@ -19,9 +19,15 @@ unsigned char paused = 1;
 double pausedTime = 0;
 double gameTime = 0;
 uint8_t elapsedMins = 0;
-// uint8_t wallLocations[4,5];
+
+double wallSpeed = 0.01;
 uint8_t wallBuffer[504];
 
+typedef struct{
+	double x1, y1, x2, y2, dx, dy, deltax, deltay;
+}wall;
+
+wall walls[4];
 
 ///Interrupts for timer and debouncing
 volatile int timeCounter = 0;
@@ -49,6 +55,7 @@ volatile uint8_t JoystickCentreCounter = 0;
 volatile uint8_t JoystickCentreState = 0;
 // Global variables end
 
+
 ///Draws a double to the screen
 void draw_double(uint8_t x, uint8_t y, double value, colour_t colour) {
 	char buffer[20];
@@ -71,10 +78,76 @@ void draw_int(uint8_t x, uint8_t y, uint8_t value, colour_t colour, int leadingZ
 	}
 }
 
-// Given an x and y, is that pixel 1 on the current buffer
-// int isPixelOn(int pixelx, int pixely){
+void create_walls(){
+	wall wall1 = {18, 15, 13, 25, (10*wallSpeed), (5*wallSpeed), 5, 10};
+	wall wall2 = {25, 35, 25, 45, (10*wallSpeed), (0*wallSpeed), 0, 10};
+	wall wall3 = {45, 10, 60, 10, (0*wallSpeed), (15*wallSpeed) * -1, 15, 0};
+	wall wall4 = {58, 25, 72, 30, (5*wallSpeed) * -1, (14*wallSpeed), 14, 5};
+	walls[0] = wall1;
+	walls[1] = wall2;
+	walls[2] = wall3;
+	walls[3] = wall4;
+}
 
-// }
+void move_walls(){
+	for (int i = 0; i < 4; i++)
+	{
+		walls[i].x1 += walls[i].dx;
+		walls[i].x2 += walls[i].dx;
+		walls[i].y1 += walls[i].dy;
+		walls[i].y2 += walls[i].dy;
+
+		// Branch of if's to separate into which direction each wall is travelling
+		//-------------------- DX
+		//If the wall is travlling to the right
+		if (walls[i].dx > 0)
+		{
+			if (walls[i].x1 >= 84 && walls[i].x2 >= 84)
+			{
+				walls[i].x1 = walls[i].x1 - 84 + walls[i].deltax;
+				walls[i].x2 = walls[i].x2 - 84 + walls[i].deltax;
+			}
+		}
+		// If the wall is travlling to the left
+		else if (walls[i].dx < 0)
+		{
+			if (walls[i].x1 <= 0 && walls[i].x2 <= 0)
+			{
+				walls[i].x1 = walls[i].x1 + 84 + walls[i].deltax;
+				walls[i].x2 = walls[i].x2 + 84 + walls[i].deltax;
+			}
+		}
+		
+		//-------------------- DY
+		// Is the wall travelling up
+		if (walls[i].dy < 0)
+		{
+			if (walls[i].y1 <= 8 && walls[i].y2 <= 8)
+			{
+				walls[i].y1 = walls[i].y1 + 40 + walls[i].deltay;
+				walls[i].y2 = walls[i].y2 + 40 + walls[i].deltay;
+			}
+		}
+		// Is the wall travelling down
+		else if (walls[i].dy > 0)
+		{
+			if (walls[i].y1 >= 48 && walls[i].y2 >= 48)
+			{
+				walls[i].y1 = walls[i].y1 - (41 + walls[i].deltay);
+				walls[i].y2 = walls[i].y2 - (41 + walls[i].deltay);
+			}
+		}
+		draw_line(walls[i].x1, walls[i].y1, walls[i].x2, walls[i].y2, 1);
+	}
+}
+
+// Same as move walls but doesnt add directional movement, for use in paused mode.
+void draw_walls(){
+	for (int i = 0; i < 4; i++)
+	{
+		draw_line(walls[i].x1, walls[i].y1, walls[i].x2, walls[i].y2, 1);
+	}
+}	
 
 ///Setup Data Direction Registers, to enable input/output
 void setupDDRS(){
@@ -105,6 +178,13 @@ void reset_timers(){
 	timeCounter = 0;
 }
 
+
+void reset_dir_and_speed(){
+	double direction  = rand() * M_PI * 2 / RAND_MAX;
+	tdx = speed * cos(direction);
+	tdy = speed * sin(direction);
+}
+
 void reset_char_positions(){
 	tx = LCD_X - 6, ty = LCD_Y - 9;
 	jx = 0, jy = 8;
@@ -113,13 +193,18 @@ void reset_char_positions(){
 
 void reset_variables(){
 	reset_timers();
-	
+	reset_char_positions();
 }
 
-int IsBitSet( unsigned char byte, int index )
+// Given an x and y, return the pixels state
+// at that location on the current buffer
+int IsPixelSet(int x, int y)
 {
-  int mask = 1<<index;
-  return (byte & mask) != 0;
+	int bank = y / 8;
+	int bit = y % 8;
+	int index = (bank * 84) + x;
+	uint8_t byte = wallBuffer[index];
+	return BIT_VALUE(byte, bit);
 }
 
 ISR(TIMER0_OVF_vect){
@@ -198,7 +283,6 @@ ISR(TIMER0_OVF_vect){
 }
 
 
-
 // Start Game screen
 void drawstartScreen(void){
 	draw_string(12, 4, "Tom & Jerry!", FG_COLOUR);
@@ -206,13 +290,6 @@ void drawstartScreen(void){
 	draw_string(15, 32, "James Scott", FG_COLOUR);
 	draw_string(22, 41, "N9943618", FG_COLOUR);
 }
-
-void draw_walls(){
-	draw_line(18, 15, 13, 25, FG_COLOUR);
-	draw_line(25, 35, 25, 45, FG_COLOUR);
-	draw_line(45, 10, 60, 10, FG_COLOUR);
-	draw_line(58, 25, 72, 30, FG_COLOUR);
-}	
  	
 void draw_jerry(){
 	uint8_t jerryBitmap[5] = {
@@ -230,6 +307,7 @@ void draw_jerry(){
 		}
 	}
 }
+
 void draw_tom(){
 	uint8_t tomBitmap[5] = {
 		0b10011,
@@ -247,14 +325,56 @@ void draw_tom(){
 	}
 }
 
-void reset_dir_and_speed(){
-	double direction  = rand() * M_PI * 2 / RAND_MAX;
-	tdx = speed * cos(direction);
-	tdy = speed * sin(direction);
-}
-
 void setup_tom(){
 	reset_dir_and_speed();
+}
+
+// Provide new chars topleft x and y, direction will then check that characters perimiter for a wall.
+int wall_collision_check(int new_x, int new_y, char direction){
+	int result = 0;
+	switch (direction)
+	{
+	case 'L':
+		for (int i = 0; i < 5; i++)
+		{
+			if(IsPixelSet(new_x, new_y+i)){
+				result = 1;
+			}
+		}
+		 
+		break;
+	case 'R':
+		for (int i = 0; i < 5; i++)
+		{
+			if(IsPixelSet(new_x + 5, new_y+i)){
+				result = 1;
+			}
+		}
+		break;
+	case 'U':
+		for (int i = 0; i < 5; i++)
+		{
+			if(IsPixelSet(new_x+i, new_y)){
+				result = 1;
+			}
+		}
+		 
+		break;
+	case 'D':
+		for (int i = 0; i < 5; i++)
+		{
+			if(IsPixelSet(new_x+i, new_y + 5)){
+				result = 1;
+			}
+		}
+		break;
+	
+	default:
+		break;
+	}
+	
+	
+	return result;
 }
 
 // Checks for Tom/Jerry collision
@@ -281,6 +401,10 @@ int tom_jerry_iscollided(){
 }
 
 void move_tom(){
+	if(tom_jerry_iscollided()){
+		reset_char_positions();
+		jerryLives--;
+	}
 	int new_x = round(tx + tdx), new_y = round(ty + tdy);
 	uint8_t bounced = 0;
 
@@ -302,19 +426,57 @@ void move_tom(){
 void jerry_movement(){
 	if(tom_jerry_iscollided()){
 		reset_char_positions();
+		jerryLives--;
 	}
 	else{
 		if (JoystickUpState == 1 && jy > 8){
-			jy = jy - 1;
+			if (wall_collision_check(jx, jy-1, 'U') == 0)
+			{
+				jy = jy - 1;
+				CLEAR_BIT(PORTD, 6);
+			}
+			else
+			{
+				SET_BIT(PORTD, 6);
+			}
+			
+			
 		}
 		else if (JoystickDownState == 1 && jy < 43){
-			jy = jy + 1;
+			
+			if (wall_collision_check(jx, jy+1, 'D') == 0)
+			{
+				jy = jy + 1;
+				CLEAR_BIT(PORTD, 6);
+			}
+			else
+			{
+				SET_BIT(PORTD, 6);
+			}
 		}
 		else if (JoystickLeftState == 1 && jx >= 0){
-			jx = jx - 1;
+			if (wall_collision_check(jx-1, jy, 'L') == 0)
+			{
+				jx = jx - 1;	
+				CLEAR_BIT(PORTD, 6);
+			}
+			else
+			{
+				SET_BIT(PORTD, 6);
+			}
+			
+			
 		}
 		else if (JoystickRightState == 1 && jx < 78){
-			jx = jx + 1;
+			if (wall_collision_check(jx+1, jy, 'R') == 0)
+			{
+				jx = jx + 1;	
+				CLEAR_BIT(PORTD, 6);
+			}
+			else
+			{
+				SET_BIT(PORTD, 6);
+			}
 		}
 	}
 }
@@ -363,6 +525,8 @@ int startup(){
 }
 
 void paused_gameplay(){
+	draw_walls();
+	statusBar();
 	// Calculating how long the game was paused for
 	pausedTime = (timeCounter * 256.0 + TCNT0) * 1024.0 / 8000000.0;
 	for (int i = 0; i < elapsedMins; i++) // Subtracting minutes
@@ -376,6 +540,9 @@ void paused_gameplay(){
 }
 
 void normal_gameplay(){
+	move_walls();
+	copyScreenBuffer(screen_buffer, wallBuffer);
+	statusBar();
 	// Only update timers if normal gameplay
 	gameTime = (timeCounter * 256.0 + TCNT0) * 1024.0 / 8000000.0;
 	gameTime = gameTime - pausedTime;
@@ -419,25 +586,21 @@ void setup() {
 
 	setupTimers();
 	setupDDRS();
-	
+
+	create_walls();
 	drawstartScreen();
 	show_screen();	
 }
 
 void process() {
 	clear_screen();
-	draw_walls();
-	copyScreenBuffer(screen_buffer, wallBuffer);
-	statusBar();
-	// Take a copy of the screen buffer and use this for wall detection.
-	// Take copy before anything but the status bar and walls have been drawn
 	pause_check();
 	
 	jerry_movement();
 	
 	draw_jerry();
 	draw_tom();
-
+	
 	show_screen();}
 
 // ----------------------------------------------------------
