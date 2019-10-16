@@ -10,23 +10,34 @@
 #include <graphics.h>
 
 // Global Variables
-double tx = LCD_X - 6, ty = LCD_Y - 9, tdx, tdy, speed = 0.4;
+double tx = LCD_X - 6, ty = LCD_Y - 9, tdx, tdy;
 int jx = 0, jy = 8;
 int levelNum = 1;
 int jerryLives = 5;
-int score = 0;
+int jerryScore = 0;
 unsigned char paused = 1;
 double pausedTime = 0;
 double gameTime = 0;
 uint8_t elapsedMins = 0;
 
+//int chedese_coords[50][2] = {[0 ... 49][0] = -5, [0 ... 49][1] = -5};
+//int cheese_spawned = 0;
+int cheese_max = 5;
+int cheese_eaten = 0;
+uint32_t cheese_secs = 4;
+
+double charSpeed = 0.4;
 double wallSpeed = 0.01;
 uint8_t wallBuffer[504];
 
 typedef struct{
+	int x1, y1, onScreen;
+}cheese;
+cheese cheese_coords[5];
+
+typedef struct{
 	double x1, y1, x2, y2, dx, dy, deltax, deltay;
 }wall;
-
 wall walls[4];
 
 ///Interrupts for timer and debouncing
@@ -56,6 +67,48 @@ volatile uint8_t JoystickCentreState = 0;
 // Global variables end
 
 
+
+// Given an x and y, return the pixels state
+// at that location on the current buffer
+int IsPixelSet(int x, int y, uint8_t buffer[])
+{
+	int bank = y / 8;
+	int bit = y % 8;
+	int index = (bank * 84) + x;
+	uint8_t byte = buffer[index];
+	return BIT_VALUE(byte, bit);
+}
+
+int random_x(){
+    return abs(rand() % 84);
+}
+int random_y(){
+    return abs(rand() % 48-8) + 8;
+}
+
+// Returns 1 if space occupied, 0 otherwise
+int check_occupied(int x, int y, int length, int height){
+    for (int i = 0; i < height; i++)
+	{
+		for (int j = 0; j < length; j++)
+		{
+			if(IsPixelSet(x+length, y+height, screen_buffer)){
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+
+// Copying screen buffer to walls buffer
+void copyScreenBuffer(uint8_t screen_buffer[], uint8_t wallBuffer[]){
+	for (int i = 0; i < 504; i++)
+	{
+		wallBuffer[i] = screen_buffer[i];
+	}
+}
+
 ///Draws a double to the screen
 void draw_double(uint8_t x, uint8_t y, double value, colour_t colour) {
 	char buffer[20];
@@ -78,6 +131,73 @@ void draw_int(uint8_t x, uint8_t y, uint8_t value, colour_t colour, int leadingZ
 	}
 }
 
+void jerry_dead(){
+	jerryLives--;
+	jx = 0, jy = 8;	
+}
+
+void tom_dead(){
+	tx = LCD_X - 6, ty = LCD_Y - 9;
+}
+
+void reset_dir_and_speed(){
+	double direction  = rand() * M_PI * 2 / RAND_MAX;
+	tdx = charSpeed * cos(direction);
+	tdy = charSpeed * sin(direction);
+}
+
+// Provide new chars topleft x and y, direction will then check that characters perimiter for a wall.
+int wall_collision_check(int new_x, int new_y, char direction){
+	int char_left = (int)new_x + 1;
+	int char_right = (int)new_x+5;
+	int char_top = (int)new_y;
+	int char_bottom = (int)new_y+4;
+	
+	int result = 0;
+	switch (direction)
+	{
+	case 'U':
+		for (int i = 0; i < 5; i++)
+		{
+			// Start Top Left - Checking Top side border
+			if(IsPixelSet(char_left + i, char_top, wallBuffer)){
+				result = 1;
+			}
+		}
+		break;
+	case 'D':
+		for (int i = 0; i < 5; i++)
+		{
+			// Start Bottom left - Checking bottom side
+			if(IsPixelSet(char_left + i, char_bottom, wallBuffer)){
+				result = 1;
+			}
+		}
+		break;
+	case 'L':
+		for (int i = 0; i < 5; i++)
+		{
+			// Start Top Left - Checking left side border
+			if(IsPixelSet(char_left, char_top + i, wallBuffer)){
+				result = 1;
+			}
+		}
+		break;
+	case 'R':
+		for (int i = 0; i < 5; i++)
+		{
+			// Start Top Right - Checking right side border
+			if(IsPixelSet(char_right, char_top + i, wallBuffer)){
+				result = 1;
+			}
+		}
+		break;
+	default:
+		break;
+	}
+	return result;
+}
+
 void create_walls(){
 	wall wall1 = {18, 15, 13, 25, (10*wallSpeed), (5*wallSpeed), 5, 10};
 	wall wall2 = {25, 35, 25, 45, (10*wallSpeed), (0*wallSpeed), 0, 10};
@@ -89,28 +209,118 @@ void create_walls(){
 	walls[3] = wall4;
 }
 
+void react_to_walls(char character){
+	char collidedU = 0;
+	char collidedD = 0;
+	char collidedL = 0;
+	char collidedR = 0;
+
+	if (character == 'T')
+	{
+		// If wall is coming from the Right
+		if (wall_collision_check(tx, ty, 'L') == 1)
+		{
+			collidedL = 1;
+			tx++;
+		}
+		// If wall is coming from the Left
+		else if (wall_collision_check(tx, ty, 'R') == 1)
+		{
+			collidedR = 1;
+			tx--;
+		}
+		// If wall is coming from above
+		if (wall_collision_check(tx, ty, 'U') == 1)
+		{
+			collidedU = 1;
+			ty++;
+		}
+		// If wall is coming from below
+		else if (wall_collision_check(tx, ty+1, 'D') == 1)
+		{
+			collidedD = 1;
+			ty--;
+		}
+		if (collidedL || collidedR ||collidedU || collidedD)
+		{
+			reset_dir_and_speed();
+		}		
+		else if (ty <= 7 || ty > 43 || tx < -1 || tx > 79)
+		{
+			reset_dir_and_speed();
+			tom_dead();
+		}
+	}
+	
+	else if (character == 'J')
+	{	
+		// If wall is coming from the Right
+		if (wall_collision_check(jx, jy, 'L') == 1)
+		{
+			collidedL = 1;
+			jx++;
+		}
+		// If wall is coming from the Left
+		else if (wall_collision_check(jx, jy, 'R') == 1)
+		{
+			collidedR = 1;
+			jx--;
+		}
+		// If wall is coming from above
+		if (wall_collision_check(jx, jy, 'U') == 1)
+		{
+			collidedU = 1;
+			jy++;
+		}
+		// If wall is coming from below
+		else if (wall_collision_check(jx, jy+1, 'D') == 1)
+		{
+			collidedD = 1;
+			jy--;
+		}
+		if ((collidedL && collidedR) || (collidedU && collidedD))
+		{
+			jerry_dead();
+		}
+		else if ((collidedL && collidedR && collidedU) || (collidedL && collidedR && collidedD))
+		{
+			jerry_dead();
+		}
+		/// THIS NEEDS WORK, CLIPPING INTO THE WALL MOVING RIGHT WHEN JERRY MOVING LEFT WTF 
+		
+		else if (jy <= 7 || jy > 43 || jx < -1 || jx > 78)
+		{
+			jerry_dead();	
+		}
+	}
+	return;
+}
+
 void move_walls(){
 	for (int i = 0; i < 4; i++)
 	{
 		walls[i].x1 += walls[i].dx;
 		walls[i].x2 += walls[i].dx;
 		walls[i].y1 += walls[i].dy;
-		walls[i].y2 += walls[i].dy;
-
+		walls[i].y2 += walls[i].dy;		
+		react_to_walls('J');
+		react_to_walls('T');
 		// Branch of if's to separate into which direction each wall is travelling
 		//-------------------- DX
 		//If the wall is travlling to the right
 		if (walls[i].dx > 0)
 		{
+			
 			if (walls[i].x1 >= 84 && walls[i].x2 >= 84)
 			{
-				walls[i].x1 = walls[i].x1 - 84 + walls[i].deltax;
-				walls[i].x2 = walls[i].x2 - 84 + walls[i].deltax;
+				walls[i].x1 = walls[i].x1 - (84 + walls[i].deltax);
+				walls[i].x2 = walls[i].x2 - (84 + walls[i].deltax);
 			}
 		}
 		// If the wall is travlling to the left
 		else if (walls[i].dx < 0)
 		{
+			
 			if (walls[i].x1 <= 0 && walls[i].x2 <= 0)
 			{
 				walls[i].x1 = walls[i].x1 + 84 + walls[i].deltax;
@@ -122,6 +332,7 @@ void move_walls(){
 		// Is the wall travelling up
 		if (walls[i].dy < 0)
 		{
+			
 			if (walls[i].y1 <= 8 && walls[i].y2 <= 8)
 			{
 				walls[i].y1 = walls[i].y1 + 40 + walls[i].deltay;
@@ -131,6 +342,7 @@ void move_walls(){
 		// Is the wall travelling down
 		else if (walls[i].dy > 0)
 		{
+			
 			if (walls[i].y1 >= 48 && walls[i].y2 >= 48)
 			{
 				walls[i].y1 = walls[i].y1 - (41 + walls[i].deltay);
@@ -178,33 +390,53 @@ void reset_timers(){
 	timeCounter = 0;
 }
 
-
-void reset_dir_and_speed(){
-	double direction  = rand() * M_PI * 2 / RAND_MAX;
-	tdx = speed * cos(direction);
-	tdy = speed * sin(direction);
+void reset_cheese_positions(){
+	for (int i = 0; i < 5; i++)
+	{
+		cheese_coords[i].x1 = -5;
+		cheese_coords[i].y1 = -5;
+		cheese_coords[i].onScreen = 0;
+	}
 }
 
 void reset_char_positions(){
 	tx = LCD_X - 6, ty = LCD_Y - 9;
-	jx = 0, jy = 8;
+	jerry_dead();
 	reset_dir_and_speed();
 }
 
 void reset_variables(){
 	reset_timers();
 	reset_char_positions();
+	reset_cheese_positions();
 }
 
-// Given an x and y, return the pixels state
-// at that location on the current buffer
-int IsPixelSet(int x, int y)
-{
-	int bank = y / 8;
-	int bit = y % 8;
-	int index = (bank * 84) + x;
-	uint8_t byte = wallBuffer[index];
-	return BIT_VALUE(byte, bit);
+void check_for_cheese(){
+	for (int y = 0; y < 5; y++)
+	{
+		for (int x = 0; x < 5; x++)
+		{
+			for (int i = 0; i < 5; i++)
+			{
+				for (int j = 0; j < 3; j++)
+				{
+					for (int k = 0; k < 2; k++)
+					{
+						if ((jx+x == (cheese_coords[i].x1 + k)) && (jy+y == (cheese_coords[i].y1 + j)))
+						{
+							cheese_coords[i].onScreen = 0;
+							jerryScore++;
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	
+	
+	
+	
 }
 
 ISR(TIMER0_OVF_vect){
@@ -282,7 +514,6 @@ ISR(TIMER0_OVF_vect){
     }
 }
 
-
 // Start Game screen
 void drawstartScreen(void){
 	draw_string(12, 4, "Tom & Jerry!", FG_COLOUR);
@@ -327,54 +558,6 @@ void draw_tom(){
 
 void setup_tom(){
 	reset_dir_and_speed();
-}
-
-// Provide new chars topleft x and y, direction will then check that characters perimiter for a wall.
-int wall_collision_check(int new_x, int new_y, char direction){
-	int result = 0;
-	switch (direction)
-	{
-	case 'L':
-		for (int i = 0; i < 5; i++)
-		{
-			if(IsPixelSet(new_x, new_y+i)){
-				result = 1;
-			}
-		}
-		 
-		break;
-	case 'R':
-		for (int i = 0; i < 5; i++)
-		{
-			if(IsPixelSet(new_x + 5, new_y+i)){
-				result = 1;
-			}
-		}
-		break;
-	case 'U':
-		for (int i = 0; i < 5; i++)
-		{
-			if(IsPixelSet(new_x+i, new_y)){
-				result = 1;
-			}
-		}
-		 
-		break;
-	case 'D':
-		for (int i = 0; i < 5; i++)
-		{
-			if(IsPixelSet(new_x+i, new_y + 5)){
-				result = 1;
-			}
-		}
-		break;
-	
-	default:
-		break;
-	}
-	
-	
-	return result;
 }
 
 // Checks for Tom/Jerry collision
@@ -451,6 +634,7 @@ void jerry_movement(){
 			}
 			else
 			{
+				_delay_ms(10000);
 				SET_BIT(PORTD, 6);
 			}
 		}
@@ -495,7 +679,7 @@ void statusBar(){
 	// Score
 	draw_string(42, 0, "S", FG_COLOUR);
 	draw_char(48, 0, ':', FG_COLOUR);
-	draw_int(52, 0, score, FG_COLOUR, 0);
+	draw_int(52, 0, jerryScore, FG_COLOUR, 0);
 	
 	// Timer
 	if (gameTime >= 60){
@@ -510,11 +694,49 @@ void statusBar(){
 	draw_line(0, 7, 84, 7, FG_COLOUR);
 }
 
-// Copying screen buffer to walls buffer
-void copyScreenBuffer(uint8_t screen_buffer[], uint8_t wallBuffer[]){
-	for (int i = 0; i < 504; i++)
+// Map Spawning items
+void create_cheese(){
+    int x_rand = random_x(), y_rand = random_y();
+
+    if (!check_occupied(x_rand, y_rand, 3, 4)){
+		for (int i = 0; i < 5; i++)
+		{
+			if (cheese_coords[i].onScreen == 0)
+			{
+				cheese_coords[i].onScreen = 1;
+				cheese_coords[i].x1 = x_rand;
+				cheese_coords[i].y1 = y_rand;
+				return;
+			}
+		}
+    }
+    else{
+        create_cheese();
+    }
+}
+
+void draw_cheese(int x, int y){
+	uint8_t cheeseBitmap[3] = {
+		0b11,
+		0b10,
+		0b11
+		};
+	for (int i = 0; i < 3; i++){
+		for (int j = 0; j < 3; j++){
+			if (BIT_VALUE(cheeseBitmap[i], (2-j)) == 1){
+				draw_pixel(x + j, y + i, 1);
+			}
+		}
+	}
+}
+
+void draw_all_cheeses(){
+	for (int i = 0; i < 5; i++)
 	{
-		wallBuffer[i] = screen_buffer[i];
+		if (cheese_coords[i].onScreen == 1)
+		{
+			draw_cheese(cheese_coords[i].x1, cheese_coords[i].y1);
+		}
 	}
 }
 
@@ -537,9 +759,14 @@ void paused_gameplay(){
 
 	// Drawing text across the screen to show game status
 	draw_string(27, 20, "PAUSED", 1);
+	draw_tom();
+	draw_jerry();
+	draw_all_cheeses();
+	check_for_cheese();
 }
 
 void normal_gameplay(){
+	
 	move_walls();
 	copyScreenBuffer(screen_buffer, wallBuffer);
 	statusBar();
@@ -550,7 +777,20 @@ void normal_gameplay(){
 	{
 		gameTime = gameTime - 60;
 	}
+	
 	move_tom();
+	draw_tom();
+	draw_jerry();
+	draw_all_cheeses();
+	// DEBUGGING DRAWING
+	// draw_int(5,20,,1,0);
+	// draw_int(5,30,,1,0);
+	if ((int)gameTime + 2 == cheese_secs/* && cheese_spawned != cheese_max*/)
+	{
+		cheese_secs += 2;
+		create_cheese();
+	}
+	check_for_cheese();
 }
 
 void pause_check(){
@@ -598,8 +838,6 @@ void process() {
 	
 	jerry_movement();
 	
-	draw_jerry();
-	draw_tom();
 	
 	show_screen();}
 
