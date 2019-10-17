@@ -20,20 +20,23 @@ double pausedTime = 0;
 double gameTime = 0;
 uint8_t elapsedMins = 0;
 
-//int chedese_coords[50][2] = {[0 ... 49][0] = -5, [0 ... 49][1] = -5};
-//int cheese_spawned = 0;
 int cheese_max = 5;
 int cheese_eaten = 0;
-uint32_t cheese_secs = 4;
+int cheese_secs = 4;
 
-double charSpeed = 0.4;
+int traps_max = 5;
+int traps_eaten = 0;
+int traps_secs = 6;
+
+double charSpeed = 1;
 double wallSpeed = 0.01;
 uint8_t wallBuffer[504];
 
 typedef struct{
 	int x1, y1, onScreen;
-}cheese;
-cheese cheese_coords[5];
+}items;
+items cheese_coords[5];
+items trap_coords[5];
 
 typedef struct{
 	double x1, y1, x2, y2, dx, dy, deltax, deltay;
@@ -80,10 +83,10 @@ int IsPixelSet(int x, int y, uint8_t buffer[])
 }
 
 int random_x(){
-    return abs(rand() % 84);
+    return abs(rand() % 80); // 80 To account for width of trap bitmap
 }
 int random_y(){
-    return abs(rand() % 48-8) + 8;
+    return abs(rand() % 48-11) + 8; // - 11 as 8 for status bar and 3 for cheese/trap height 
 }
 
 // Returns 1 if space occupied, 0 otherwise
@@ -148,8 +151,8 @@ void reset_dir_and_speed(){
 
 // Provide new chars topleft x and y, direction will then check that characters perimiter for a wall.
 int wall_collision_check(int new_x, int new_y, char direction){
-	int char_left = (int)new_x + 1;
-	int char_right = (int)new_x+5;
+	int char_left = (int)new_x;
+	int char_right = (int)new_x+4;
 	int char_top = (int)new_y;
 	int char_bottom = (int)new_y+4;
 	
@@ -245,7 +248,7 @@ void react_to_walls(char character){
 		{
 			reset_dir_and_speed();
 		}		
-		else if (ty <= 7 || ty > 43 || tx < -1 || tx > 79)
+		else if (ty < 6 || ty > 45 || tx < -1 || tx > 82)
 		{
 			reset_dir_and_speed();
 			tom_dead();
@@ -273,7 +276,7 @@ void react_to_walls(char character){
 			jy++;
 		}
 		// If wall is coming from below
-		else if (wall_collision_check(jx, jy+1, 'D') == 1)
+		else if (wall_collision_check(jx, jy, 'D') == 1)
 		{
 			collidedD = 1;
 			jy--;
@@ -288,7 +291,7 @@ void react_to_walls(char character){
 		}
 		/// THIS NEEDS WORK, CLIPPING INTO THE WALL MOVING RIGHT WHEN JERRY MOVING LEFT WTF 
 		
-		else if (jy <= 7 || jy > 43 || jx < -1 || jx > 78)
+		else if (jy <= 7 || jy > 44 || jx < -1 || jx > 79)
 		{
 			jerry_dead();	
 		}
@@ -399,6 +402,15 @@ void reset_cheese_positions(){
 	}
 }
 
+void reset_trap_positions(){
+	for (int i = 0; i < 5; i++)
+	{
+		trap_coords[i].x1 = -5;
+		trap_coords[i].y1 = -5;
+		trap_coords[i].onScreen = 0;
+	}
+}
+
 void reset_char_positions(){
 	tx = LCD_X - 6, ty = LCD_Y - 9;
 	jerry_dead();
@@ -409,34 +421,61 @@ void reset_variables(){
 	reset_timers();
 	reset_char_positions();
 	reset_cheese_positions();
+	reset_trap_positions();
 }
 
 void check_for_cheese(){
 	for (int y = 0; y < 5; y++)
 	{
-		for (int x = 0; x < 5; x++)
+		if (cheese_coords[y].onScreen == 1) // Proceed if cheese onscreen - Uses y coord for effeciency
 		{
-			for (int i = 0; i < 5; i++)
+			for (int x = 0; x < 5; x++) // Looping over x coord of jerry
 			{
-				for (int j = 0; j < 3; j++)
+				for (int i = 0; i < 5; i++) // Looping through each cheese in cheese_coords
 				{
-					for (int k = 0; k < 2; k++)
+					for (int j = 0; j < 3; j++) // Lopping through cheeses y coordinate
 					{
-						if ((jx+x == (cheese_coords[i].x1 + k)) && (jy+y == (cheese_coords[i].y1 + j)))
+						for (int k = 0; k < 2; k++) // Looping through cheeses x coordinate
 						{
-							cheese_coords[i].onScreen = 0;
-							jerryScore++;
+							if ((jx+x == (cheese_coords[i].x1 + k)) && (jy+y == (cheese_coords[i].y1 + j)) && (cheese_coords[i].onScreen == 1))
+							{
+								cheese_coords[i].onScreen = 0;
+								jerryScore++;
+								break;
+							}
 						}
 					}
 				}
 			}
 		}
 	}
-	
-	
-	
-	
-	
+}
+
+void check_for_traps(){
+	for (int y = 0; y < 5; y++) //Looping through y coord of jerry
+	{
+		if (trap_coords[y].onScreen == 1) // Proceed if trap onscreen - Uses y coord for effeciency.
+		{
+			for (int x = 0; x < 5; x++) // Looping over x coord of jerry
+			{
+				for (int i = 0; i < 5; i++) // Looping through each trap in trap_coords
+				{
+					for (int j = 0; j < 3; j++) // Lopping through traps y coordinate
+					{
+						for (int k = 0; k < 3; k++) // Looping through traps x coordinate
+						{
+							if ((jx+x == (trap_coords[i].x1 + k)) && (jy+y == (trap_coords[i].y1 + j)) && (trap_coords[i].onScreen == 1))
+							{
+								trap_coords[i].onScreen = 0;
+								jerryLives--;
+								break;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 ISR(TIMER0_OVF_vect){
@@ -531,8 +570,8 @@ void draw_jerry(){
 		0b01010
 		};
 	for (int i = 0; i < 5; i++){
-		for (int j = 0; j < 6; j++){
-			if (BIT_VALUE(jerryBitmap[i], (5-j)) == 1){
+		for (int j = 0; j < 5; j++){
+			if (BIT_VALUE(jerryBitmap[i], (4-j)) == 1){
 				draw_pixel(jx + j, jy + i, 1);
 			}
 		}
@@ -548,8 +587,8 @@ void draw_tom(){
 		0b01010
 		};
 	for (int i = 0; i < 5; i++){
-		for (int j = 0; j < 6; j++){
-			if (BIT_VALUE(tomBitmap[i], (5-j)) == 1){
+		for (int j = 0; j < 5; j++){
+			if (BIT_VALUE(tomBitmap[i], (4-j)) == 1){
 				draw_pixel(tx + j, ty + i, 1);
 			}
 		}
@@ -591,10 +630,10 @@ void move_tom(){
 	int new_x = round(tx + tdx), new_y = round(ty + tdy);
 	uint8_t bounced = 0;
 
-	if (new_x < 0 || new_x > 78){
+	if (new_x <= 0 || new_x > 79){
 		bounced = 1;
 	}
-	if (new_y <= 8 || new_y >= 44){
+	if (new_y <= 8 || new_y > 45){
 		bounced = 1;
 	}
 	if (bounced == 1){
@@ -608,79 +647,72 @@ void move_tom(){
 
 void jerry_movement(){
 	if(tom_jerry_iscollided()){
-		reset_char_positions();
-		jerryLives--;
+		tom_dead();
+		jerry_dead();
 	}
 	else{
 		if (JoystickUpState == 1 && jy > 8){
 			if (wall_collision_check(jx, jy-1, 'U') == 0)
 			{
 				jy = jy - 1;
-				CLEAR_BIT(PORTD, 6);
 			}
-			else
-			{
-				SET_BIT(PORTD, 6);
-			}
-			
-			
 		}
 		else if (JoystickDownState == 1 && jy < 43){
-			
 			if (wall_collision_check(jx, jy+1, 'D') == 0)
 			{
 				jy = jy + 1;
-				CLEAR_BIT(PORTD, 6);
-			}
-			else
-			{
-				_delay_ms(10000);
-				SET_BIT(PORTD, 6);
 			}
 		}
-		else if (JoystickLeftState == 1 && jx >= 0){
+		else if (JoystickLeftState == 1 && jx > 0){
 			if (wall_collision_check(jx-1, jy, 'L') == 0)
 			{
-				jx = jx - 1;	
-				CLEAR_BIT(PORTD, 6);
+				jx = jx - 1;
 			}
-			else
-			{
-				SET_BIT(PORTD, 6);
-			}
-			
-			
 		}
-		else if (JoystickRightState == 1 && jx < 78){
+		else if (JoystickRightState == 1 && jx < 79){
 			if (wall_collision_check(jx+1, jy, 'R') == 0)
 			{
-				jx = jx + 1;	
-				CLEAR_BIT(PORTD, 6);
-			}
-			else
-			{
-				SET_BIT(PORTD, 6);
+				jx = jx + 1;
 			}
 		}
+		check_for_cheese();
+		check_for_traps();
 	}
 }
 
 void statusBar(){
-	// Level
-	draw_string(0, 0, "Lv", FG_COLOUR);
-	draw_char(10, 0, ':', FG_COLOUR);
-	draw_int(14, 0, levelNum, FG_COLOUR, 0);
+	// Spacing must be different for score sizes etc
+	if (jerryScore < 10)
+	{
+		// Level
+		draw_string(0, 0, "Lv", FG_COLOUR);
+		draw_char(10, 0, ':', FG_COLOUR);
+		draw_int(14, 0, levelNum, FG_COLOUR, 0);
 
-	// Lives
-	draw_string(21, 0, "HP", FG_COLOUR);
-	draw_char(31, 0, ':', FG_COLOUR);
-	draw_int(35, 0, jerryLives, FG_COLOUR, 0);
+		// Lives
+		draw_string(21, 0, "HP", FG_COLOUR);
+		draw_char(31, 0, ':', FG_COLOUR);
+		draw_int(35, 0, jerryLives, FG_COLOUR, 0);
 
-	// Score
-	draw_string(42, 0, "S", FG_COLOUR);
-	draw_char(48, 0, ':', FG_COLOUR);
-	draw_int(52, 0, jerryScore, FG_COLOUR, 0);
-	
+		// Score
+		draw_string(42, 0, "S", FG_COLOUR);
+		draw_char(48, 0, ':', FG_COLOUR);
+		draw_int(52, 0, jerryScore, FG_COLOUR, 0);
+	}
+	else
+	{
+		// Level
+		draw_string(0, 0, "L:", FG_COLOUR);
+		draw_int(8, 0, levelNum, FG_COLOUR, 0);
+
+		// Lives
+		draw_string(17, 0, "H:", FG_COLOUR);
+		draw_int(26, 0, jerryLives, FG_COLOUR, 0);
+
+		// Score
+		draw_string(34, 0, "S:", FG_COLOUR);
+		draw_int(44, 0, jerryScore, FG_COLOUR, 0);
+	}
 	// Timer
 	if (gameTime >= 60){
 		elapsedMins++;  // Making this equal 0 so that it
@@ -697,7 +729,6 @@ void statusBar(){
 // Map Spawning items
 void create_cheese(){
     int x_rand = random_x(), y_rand = random_y();
-
     if (!check_occupied(x_rand, y_rand, 3, 4)){
 		for (int i = 0; i < 5; i++)
 		{
@@ -714,6 +745,38 @@ void create_cheese(){
         create_cheese();
     }
 }
+void create_trap(){
+	for (int i = 0; i < 5; i++)
+	{
+		if (trap_coords[i].onScreen == 0)
+		{
+			trap_coords[i].onScreen = 1;
+			trap_coords[i].x1 = (int)tx;
+			trap_coords[i].y1 = (int)ty;
+			return;
+		}
+	}
+}
+
+
+void spawn_cheese(){
+	if ((int)gameTime + 2 == cheese_secs)
+	{
+		cheese_secs += 2;
+		create_cheese();
+		if (cheese_secs > 63){cheese_secs = 4;}
+	}
+	check_for_cheese();
+}
+void spawn_traps(){
+	if ((int)gameTime + 3 == traps_secs)
+	{
+		traps_secs += 3;
+		create_trap();
+		if (traps_secs > 66){traps_secs = 6;}
+	}
+	check_for_traps();
+}
 
 void draw_cheese(int x, int y){
 	uint8_t cheeseBitmap[3] = {
@@ -722,8 +785,22 @@ void draw_cheese(int x, int y){
 		0b11
 		};
 	for (int i = 0; i < 3; i++){
+		for (int j = 0; j < 2; j++){
+			if (BIT_VALUE(cheeseBitmap[i], (1-j)) == 1){
+				draw_pixel(x + j, y + i, 1);
+			}
+		}
+	}
+}
+void draw_trap(int x, int y){
+	uint8_t trapBitmap[3] = {
+		0b101,
+		0b010,
+		0b101
+		};
+	for (int i = 0; i < 3; i++){
 		for (int j = 0; j < 3; j++){
-			if (BIT_VALUE(cheeseBitmap[i], (2-j)) == 1){
+			if (BIT_VALUE(trapBitmap[i], (2-j)) == 1){
 				draw_pixel(x + j, y + i, 1);
 			}
 		}
@@ -739,6 +816,33 @@ void draw_all_cheeses(){
 		}
 	}
 }
+void draw_all_traps(){
+	for (int i = 0; i < 5; i++)
+	{
+		if (trap_coords[i].onScreen == 1)
+		{
+			
+			draw_trap(trap_coords[i].x1, trap_coords[i].y1);
+		}
+	}
+}
+
+void calculate_timer(){
+	gameTime = (timeCounter * 256.0 + TCNT0) * 1024.0 / 8000000.0;
+	gameTime = gameTime - pausedTime;
+	for (int i = 0; i < elapsedMins; i++) // Subtracting minutes
+	{
+		gameTime = gameTime - 60;
+	}
+}
+void calculate_pause(){
+	pausedTime = (timeCounter * 256.0 + TCNT0) * 1024.0 / 8000000.0;
+	for (int i = 0; i < elapsedMins; i++) // Subtracting minutes
+	{
+		pausedTime = pausedTime - 60;
+	}
+	pausedTime = pausedTime - gameTime;
+}
 
 int startup(){
 	if (SW3State == 0 && prevSW3State == 1){return 1;}
@@ -750,19 +854,16 @@ void paused_gameplay(){
 	draw_walls();
 	statusBar();
 	// Calculating how long the game was paused for
-	pausedTime = (timeCounter * 256.0 + TCNT0) * 1024.0 / 8000000.0;
-	for (int i = 0; i < elapsedMins; i++) // Subtracting minutes
-	{
-		pausedTime = pausedTime - 60;
-	}
-	pausedTime = pausedTime - gameTime;
+	calculate_pause();
 
 	// Drawing text across the screen to show game status
 	draw_string(27, 20, "PAUSED", 1);
 	draw_tom();
 	draw_jerry();
 	draw_all_cheeses();
+	draw_all_traps();
 	check_for_cheese();
+	check_for_traps();
 }
 
 void normal_gameplay(){
@@ -771,26 +872,23 @@ void normal_gameplay(){
 	copyScreenBuffer(screen_buffer, wallBuffer);
 	statusBar();
 	// Only update timers if normal gameplay
-	gameTime = (timeCounter * 256.0 + TCNT0) * 1024.0 / 8000000.0;
-	gameTime = gameTime - pausedTime;
-	for (int i = 0; i < elapsedMins; i++) // Subtracting minutes
-	{
-		gameTime = gameTime - 60;
-	}
+	calculate_timer();
 	
 	move_tom();
 	draw_tom();
 	draw_jerry();
+	spawn_cheese();
+	spawn_traps();
 	draw_all_cheeses();
+	draw_all_traps();
+	
 	// DEBUGGING DRAWING
-	// draw_int(5,20,,1,0);
-	// draw_int(5,30,,1,0);
-	if ((int)gameTime + 2 == cheese_secs/* && cheese_spawned != cheese_max*/)
-	{
-		cheese_secs += 2;
-		create_cheese();
-	}
-	check_for_cheese();
+	// SET_BIT(PORTB, 3);
+	// draw_int(5,20,jerryScore,1,0);
+	// draw_int(5,30,counter,1,0);
+	// draw_int(30,20,gameTime + 2 ,1,0);
+	// draw_int(30,30,cheese_secs,1,0);
+	
 }
 
 void pause_check(){
@@ -835,11 +933,11 @@ void setup() {
 void process() {
 	clear_screen();
 	pause_check();
-	
+	check_for_cheese();
+	check_for_traps();
 	jerry_movement();
-	
-	
-	show_screen();}
+	show_screen();
+	}
 
 // ----------------------------------------------------------
 
