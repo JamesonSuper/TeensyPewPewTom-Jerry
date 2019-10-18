@@ -12,7 +12,7 @@
 
 // Global Variables
 double tx = LCD_X - 6, ty = LCD_Y - 9, tdx, tdy, direction;
-int jx = 0, jy = 8;
+double jx = 0, jy = 8;
 int levelNum = 1;
 int jerryLives = 5;
 int jerryScore = 0;
@@ -266,25 +266,25 @@ void react_to_walls(char character){
 	else if (character == 'J')
 	{	
 		// If wall is coming from the Right
-		if (wall_collision_check(jx, jy, 'L') == 1)
+		if (wall_collision_check((int)jx, (int)jy, 'L') == 1)
 		{
 			collidedL = 1;
 			jx++;
 		}
 		// If wall is coming from the Left
-		else if (wall_collision_check(jx, jy, 'R') == 1)
+		else if (wall_collision_check((int)jx, (int)jy, 'R') == 1)
 		{
 			collidedR = 1;
 			jx--;
 		}
 		// If wall is coming from above
-		if (wall_collision_check(jx, jy, 'U') == 1)
+		if (wall_collision_check((int)jx, (int)jy, 'U') == 1)
 		{
 			collidedU = 1;
 			jy++;
 		}
 		// If wall is coming from below
-		else if (wall_collision_check(jx, jy, 'D') == 1)
+		else if (wall_collision_check((int)jx, (int)jy, 'D') == 1)
 		{
 			collidedD = 1;
 			jy--;
@@ -299,7 +299,7 @@ void react_to_walls(char character){
 		}
 		/// THIS NEEDS WORK, CLIPPING INTO THE WALL MOVING RIGHT WHEN JERRY MOVING LEFT WTF 
 		
-		else if (jy <= 7 || jy > 44 || jx < -1 || jx > 79)
+		else if ((int)jy <= 7 || (int)jy > 44 || (int)jx < -1 || (int)jx > 79)
 		{
 			jerry_dead();	
 		}
@@ -468,7 +468,7 @@ void check_for_cheese(){
 					{
 						for (int k = 0; k < 2; k++) // Looping through cheeses x coordinate
 						{
-							if ((jx+x == (cheese_coords[i].x1 + k)) && (jy+y == (cheese_coords[i].y1 + j)) && (cheese_coords[i].onScreen == 1))
+							if (((int)jx+x == (cheese_coords[i].x1 + k)) && ((int)jy+y == (cheese_coords[i].y1 + j)) && (cheese_coords[i].onScreen == 1))
 							{
 								cheese_coords[i].onScreen = 0;
 								jerryScore++;
@@ -495,7 +495,7 @@ void check_for_traps(){
 					{
 						for (int k = 0; k < 3; k++) // Looping through traps x coordinate
 						{
-							if ((jx+x == (trap_coords[i].x1 + k)) && (jy+y == (trap_coords[i].y1 + j)) && (trap_coords[i].onScreen == 1))
+							if (((int)jx+x == (trap_coords[i].x1 + k)) && ((int)jy+y == (trap_coords[i].y1 + j)) && (trap_coords[i].onScreen == 1))
 							{
 								trap_coords[i].onScreen = 0;
 								jerryLives--;
@@ -519,7 +519,7 @@ void check_for_door(){
 				{
 					for (int k = 0; k < 3; k++) // Looping through traps x coordinate
 					{
-						if ((jx+x == (door.x1 + k)) && (jy+y == (door.y1 + j)))
+						if (((int)jx+x == (door.x1 + k)) && ((int)jy+y == (door.y1 + j)))
 						{
 							nextLevel();
 							break;
@@ -552,7 +552,7 @@ void draw_jerry(){
 	for (int i = 0; i < 5; i++){
 		for (int j = 0; j < 5; j++){
 			if (BIT_VALUE(jerryBitmap[i], (4-j)) == 1){
-				draw_pixel(jx + j, jy + i, 1);
+				draw_pixel((int)jx + j, (int)jy + i, 1);
 			}
 		}
 	}
@@ -581,7 +581,7 @@ void setup_tom(){
 
 // Checks for Tom/Jerry collision
 int tom_jerry_iscollided(){
-	int jerry_top = (int)jy, jerry_bottom = (int)jy+4, jerry_left = (int)jx, jerry_right = (int)jx+4;
+	int jerry_top = (int)(int)jy, jerry_bottom = (int)(int)jy+4, jerry_left = (int)(int)jx, jerry_right = (int)(int)jx+4;
 	int tom_top = (int)ty, tom_bottom = (int)ty+4, tom_left = (int)tx, tom_right = (int)tx+4;
 	if (jerry_top == tom_bottom || jerry_bottom == tom_top){
 		if (jerry_left <= tom_right && jerry_right >= tom_left){
@@ -604,7 +604,7 @@ int tom_jerry_iscollided(){
 
 void change_tom_speed(){
 	if(left_adc <= 2){
-		charSpeed = 0.1;
+		charSpeed = 0.2;
 	}
 	else if (left_adc > 2 && left_adc <= 4)
 	{
@@ -612,15 +612,37 @@ void change_tom_speed(){
 	}
 	else if (left_adc > 4 && left_adc <= 6)
 	{
-		charSpeed = 0.5;
+		charSpeed = 0.4;
 	}
 	else if (left_adc > 6 && left_adc <= 8)
 	{
-		charSpeed = 0.7;
+		charSpeed = 0.5;
 	}
 	else
 	{
-		charSpeed = 0.9;
+		charSpeed = 0.6;
+	}
+}
+
+double jerrySpeed(){
+	if(left_adc <= 2){
+		return 0.4;
+	}
+	else if (left_adc > 2 && left_adc <= 4)
+	{
+		return 0.5;
+	}
+	else if (left_adc > 4 && left_adc <= 6)
+	{
+		return 0.6;
+	}
+	else if (left_adc > 6 && left_adc <= 8)
+	{
+		return 0.8;
+	}
+	else
+	{
+		return 1;
 	}
 }
 
@@ -652,33 +674,35 @@ void move_tom(){
 }
 
 void jerry_movement(){
+	double speedfactor = jerrySpeed();
 	if(tom_jerry_iscollided()){
 		tom_dead();
 		jerry_dead();
 	}
 	else{
-		if (JoystickUpState == 1 && jy > 8){
-			if (wall_collision_check(jx, jy-1, 'U') == 0)
+		if (JoystickUpState == 1 && (int)jy > 8){
+			if (wall_collision_check((int)jx, (int)jy-1, 'U') == 0)
 			{
-				jy = jy - 1;
+
+				jy = jy - 1 * speedfactor;
 			}
 		}
-		else if (JoystickDownState == 1 && jy < 43){
-			if (wall_collision_check(jx, jy+1, 'D') == 0)
+		else if (JoystickDownState == 1 && (int)jy < 43){
+			if (wall_collision_check((int)jx, (int)jy+1, 'D') == 0)
 			{
-				jy = jy + 1;
+				jy = jy + 1 * speedfactor;
 			}
 		}
-		else if (JoystickLeftState == 1 && jx > 0){
-			if (wall_collision_check(jx-1, jy, 'L') == 0)
+		else if (JoystickLeftState == 1 && (int)jx > 0){
+			if (wall_collision_check((int)jx-1, (int)jy, 'L') == 0)
 			{
-				jx = jx - 1;
+				jx = jx - 1 * speedfactor;
 			}
 		}
-		else if (JoystickRightState == 1 && jx < 79){
-			if (wall_collision_check(jx+1, jy, 'R') == 0)
+		else if (JoystickRightState == 1 && (int)jx < 79){
+			if (wall_collision_check((int)jx+1, (int)jy, 'R') == 0)
 			{
-				jx = jx + 1;
+				jx = jx + 1 * speedfactor;
 			}
 		}
 		check_for_cheese();
@@ -908,8 +932,8 @@ void shootFirework(){
 	{
 		if (firework_coords[i].onScreen == 0)
 		{
-			firework_coords[i].x1 = jx;
-			firework_coords[i].y1 = jy;
+			firework_coords[i].x1 = (int)jx;
+			firework_coords[i].y1 = (int)jy;
 			firework_coords[i].onScreen = 1;
 			break;
 		}
