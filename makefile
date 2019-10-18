@@ -9,8 +9,15 @@ TARGETS = \
 	timer.hex \
 
 # Set the name of the folder containing libcab202_teensy.a
+CAB202_TEENSY_FOLDER=../SOFTWARE/cab202_teensy
 
-CAB202_TEENSY_FOLDER = ../SOFTWARE/cab202_teensy 
+# Set the name of the folder containing usb_serial.o
+USB_SERIAL_FOLDER =../SOFTWARE/usb_serial
+USB_SERIAL_OBJ =$(USB_SERIAL_FOLDER)/usb_serial.o
+
+# Set the name of the folder scontaining uart.o
+ADC_FOLDER =../SOFTWARE/cab202_adc
+ADC_OBJ =$(ADC_FOLDER)/cab202_adc.o
 
 # ---------------------------------------------------------------------------
 #	Leave the rest of the file alone.
@@ -18,8 +25,11 @@ CAB202_TEENSY_FOLDER = ../SOFTWARE/cab202_teensy
 
 all: $(TARGETS)
 
-TEENSY_LIBS = -lcab202_teensy -lprintf_flt -lm 
-TEENSY_DIRS =-I$(CAB202_TEENSY_FOLDER) -L$(CAB202_TEENSY_FOLDER)
+TEENSY_LIBS = $(USB_SERIAL_OBJ) $(ADC_OBJ) -lcab202_teensy -lprintf_flt -lm 
+
+TEENSY_DIRS =-I$(CAB202_TEENSY_FOLDER) -L$(CAB202_TEENSY_FOLDER) \
+	-I$(USB_SERIAL_FOLDER) -I$(ADC_FOLDER) 
+
 TEENSY_FLAGS = \
 	-std=gnu99 \
 	-mmcu=atmega32u4 \

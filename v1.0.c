@@ -8,9 +8,10 @@
 #include <cpu_speed.h>
 #include <lcd_model.h>
 #include <graphics.h>
+#include <cab202_adc.h>
 
 // Global Variables
-double tx = LCD_X - 6, ty = LCD_Y - 9, tdx, tdy;
+double tx = LCD_X - 6, ty = LCD_Y - 9, tdx, tdy, direction;
 int jx = 0, jy = 8;
 int levelNum = 1;
 int jerryLives = 5;
@@ -28,9 +29,12 @@ int traps_max = 5;
 int traps_eaten = 0;
 int traps_secs = 6;
 
-double charSpeed = 1;
+double charSpeed = 0.3;
 double wallSpeed = 0.01;
 uint8_t wallBuffer[504];
+
+int left_adc;
+int right_adc;
 
 typedef struct{
 	int x1, y1, onScreen;
@@ -54,6 +58,7 @@ int prevSW3State = 0;
 
 volatile uint8_t SW2Counter = 0;
 volatile uint8_t SW2State = 0;
+int prevSW2State = 0;
 
 volatile uint8_t JoystickUpCounter = 0;
 volatile uint8_t JoystickUpState = 0;
@@ -86,15 +91,15 @@ int IsPixelSet(int x, int y, uint8_t buffer[])
 }
 
 int random_x(){
-    return abs(rand() % 80); // 80 To account for width of trap bitmap
+	return abs(rand() % 80); // 80 To account for width of trap bitmap
 }
 int random_y(){
-    return abs(rand() % 48-11) + 8; // - 11 as 8 for status bar and 3 for cheese/trap height 
+	return abs(rand() % 48-11) + 8; // - 11 as 8 for status bar and 3 for cheese/trap height 
 }
 
 // Returns 1 if space occupied, 0 otherwise
 int check_occupied(int x, int y, int length, int height){
-    for (int i = 0; i < height; i++)
+	for (int i = 0; i < height; i++)
 	{
 		for (int j = 0; j < length; j++)
 		{
@@ -147,9 +152,7 @@ void tom_dead(){
 }
 
 void reset_dir_and_speed(){
-	double direction  = rand() * M_PI * 2 / RAND_MAX;
-	tdx = charSpeed * cos(direction);
-	tdy = charSpeed * sin(direction);
+	direction  = rand() * M_PI * 2 / RAND_MAX;
 }
 
 // Provide new chars topleft x and y, direction will then check that characters perimiter for a wall.
@@ -442,6 +445,15 @@ void reset_variables(){
 	reset_fireworks();
 }
 
+void nextLevel(){
+	levelNum = 2;	
+	door.onScreen = 0;
+	// Move Door of screen. 
+	reset_cheese_positions();
+	reset_trap_positions();
+	reset_fireworks();
+}
+
 // Collision detection for on map items
 void check_for_cheese(){
 	for (int y = 0; y < 5; y++)
@@ -497,37 +509,38 @@ void check_for_traps(){
 	}
 }
 void check_for_door(){
-	for (int y = 0; y < 5; y++) //Looping through y coord of jerry
+	if (door.onScreen == 1)
 	{
-		for (int x = 0; x < 5; x++) // Looping over x coord of jerry
+		for (int y = 0; y < 5; y++) //Looping through y coord of jerry
 		{
-			for (int j = 0; j < 4; j++) // Lopping through traps y coordinate
+			for (int x = 0; x < 5; x++) // Looping over x coord of jerry
 			{
-				for (int k = 0; k < 3; k++) // Looping through traps x coordinate
+				for (int j = 0; j < 4; j++) // Lopping through traps y coordinate
 				{
-					if ((jx+x == (door.x1 + k)) && (jy+y == (door.y1 + j)))
+					for (int k = 0; k < 3; k++) // Looping through traps x coordinate
 					{
-						levelNum = 2;
-						door.x1 = -10;
-						door.y1 = -10;
-						// Move Door of screen. 
-						// Can't use onScreen as it is used for its initial spawning
-						break;
+						if ((jx+x == (door.x1 + k)) && (jy+y == (door.y1 + j)))
+						{
+							nextLevel();
+							break;
+						}
 					}
 				}
 			}
 		}
 	}
+	
+	
 }
 
 // Start Game screen
-void drawstartScreen(void){
+void drawstartScreen(){
 	draw_string(12, 4, "Tom & Jerry!", FG_COLOUR);
 	draw_string(2, 20, "HIT SW3 TO START", 1);
 	draw_string(15, 32, "James Scott", FG_COLOUR);
 	draw_string(22, 41, "N9943618", FG_COLOUR);
 }
- 	
+	
 void draw_jerry(){
 	uint8_t jerryBitmap[5] = {
 		0b10101,
@@ -589,12 +602,37 @@ int tom_jerry_iscollided(){
 	return 0;
 }
 
+void change_tom_speed(){
+	if(left_adc <= 2){
+		charSpeed = 0.1;
+	}
+	else if (left_adc > 2 && left_adc <= 4)
+	{
+		charSpeed = 0.3;
+	}
+	else if (left_adc > 4 && left_adc <= 6)
+	{
+		charSpeed = 0.5;
+	}
+	else if (left_adc > 6 && left_adc <= 8)
+	{
+		charSpeed = 0.7;
+	}
+	else
+	{
+		charSpeed = 0.9;
+	}
+}
+
 void move_tom(){
 	react_to_walls('T');
 	if(tom_jerry_iscollided()){
 		reset_char_positions();
 		jerryLives--;
 	}
+	change_tom_speed();
+	tdx = charSpeed * cos(direction);
+	tdy = charSpeed * sin(direction);
 	int new_x = round(tx + tdx), new_y = round(ty + tdy);
 	uint8_t bounced = 0;
 
@@ -696,8 +734,8 @@ void statusBar(){
 
 // Map Spawning items
 void create_cheese(){
-    int x_rand = random_x(), y_rand = random_y();
-    if (!check_occupied(x_rand, y_rand, 4, 5)){
+	int x_rand = random_x(), y_rand = random_y();
+	if (!check_occupied(x_rand, y_rand, 4, 5)){
 		for (int i = 0; i < 5; i++)
 		{
 			if (cheese_coords[i].onScreen == 0)
@@ -708,10 +746,10 @@ void create_cheese(){
 				return;
 			}
 		}
-    }
-    else{
-        create_cheese();
-    }
+	}
+	else{
+		create_cheese();
+	}
 }
 void create_trap(){
 	for (int i = 0; i < 5; i++)
@@ -726,16 +764,16 @@ void create_trap(){
 	}
 }
 void create_door(){
-    int x_rand = random_x(), y_rand = random_y();
-    if (!check_occupied(x_rand, y_rand, 4, 4)){
+	int x_rand = random_x(), y_rand = random_y();
+	if (!check_occupied(x_rand, y_rand, 4, 4)){
 		door.x1 = x_rand;
 		door.y1 = y_rand;
 		door.onScreen = 1;
 		return;
-    }
-    else{
-        create_door();
-    }
+	}
+	else{
+		create_door();
+	}
 }
 void spawn_cheese(){
 	if ((int)gameTime + 2 == cheese_secs)
@@ -822,8 +860,60 @@ void draw_all_traps(){
 }
 
 // FIREWORKS
+items update_firework(items firework){
+	// whether to left or right
+	int next_x = 0, next_y = 0;
+	if (firework.x1 > tx)
+	{
+		next_x = (firework.x1 - 1);
+	}
+	else if (firework.x1 < tx)
+	{
+		next_x = (firework.x1 + 1);
+	}
+	// whether to move up or down
+	if (firework.y1 > ty)
+	{
+		next_y = (firework.y1 - 1);
+	}
+	else if (firework.y1 < ty)
+	{
+		next_y = (firework.y1 + 1);
+	}
+	// Is that pixel a wall
+	if (IsPixelSet(next_x, next_y, wallBuffer))
+	{
+		firework.onScreen = 0;
+	}
+	else if ((next_x >= tx) && (next_x < (tx + 4)))
+	{
+		if ((next_y >= ty) && (next_y < (ty + 4)))
+		{
+		tom_dead();
+		firework.x1 = next_x;
+		firework.y1	= next_y;
+		firework.onScreen = 0;
+		}
+	}
+	else
+	{
+		firework.x1 = next_x;
+		firework.y1	= next_y;
+		firework.onScreen = 1;
+	}
+	return firework;
+}
 void shootFirework(){
-
+	for (int i = 0; i < 20; i++)
+	{
+		if (firework_coords[i].onScreen == 0)
+		{
+			firework_coords[i].x1 = jx;
+			firework_coords[i].y1 = jy;
+			firework_coords[i].onScreen = 1;
+			break;
+		}
+	}
 }
 void draw_fireworks(){
 	for (int i = 0; i < 20; i++)
@@ -835,9 +925,14 @@ void draw_fireworks(){
 		
 		
 	}
-	
 }
 void move_fireworks(){
+	for (int i = 0; i < 20; i++)
+	{
+		if (firework_coords[i].onScreen == 1){
+			firework_coords[i] = update_firework(firework_coords[i]);
+		}
+	}
 	
 }
 void fireworks(){
@@ -849,16 +944,16 @@ void fireworks(){
 	move_fireworks();
 	draw_fireworks();
 }
-
+void updateADCs(){
+	left_adc = adc_read(0) / 100;
+	right_adc = adc_read(1) / 100;
+}
 
 // Timer functions
 void calculate_timer(){
 	gameTime = (timeCounter * 256.0 + TCNT0) * 1024.0 / 8000000.0;
 	gameTime = gameTime - pausedTime;
-	for (int i = 0; i < elapsedMins; i++) // Subtracting minutes
-	{
-		gameTime = gameTime - 60;
-	}
+	gameTime = gameTime - (60 * elapsedMins); // Subtracting minutes
 }
 void calculate_pause(){
 	pausedTime = (timeCounter * 256.0 + TCNT0) * 1024.0 / 8000000.0;
@@ -867,6 +962,14 @@ void calculate_pause(){
 		pausedTime = pausedTime - 60;
 	}
 	pausedTime = pausedTime - gameTime;
+}
+
+void nextLevelButton(){
+	if (SW2State == 0 && prevSW2State == 1)
+	{
+		nextLevel();
+	}
+	prevSW2State = SW2State;
 }
 
 int startup(){
@@ -880,6 +983,7 @@ void paused_gameplay(){
 	statusBar();
 	// Calculating how long the game was paused for
 	calculate_pause();
+	updateADCs();
 
 	// Drawing text across the screen to show game status
 	draw_string(27, 20, "PAUSED", 1);
@@ -887,15 +991,21 @@ void paused_gameplay(){
 	draw_jerry();
 	draw_all_cheeses();
 	draw_all_traps();
-	if (jerryScore > 4 && door.onScreen == 0)
+	if (jerryScore > 4 && door.onScreen == 0 && levelNum == 1)
 	{
 		create_door();
 	}
 	draw_door();
+	nextLevelButton();
+	if (jerryScore > 2)
+	{
+		fireworks();
+	}
 
 	// PUT ALL DRAWING ABOVE THIS
 	check_for_cheese();
 	check_for_traps();
+	check_for_door();
 }
 
 void normal_gameplay(){
@@ -911,31 +1021,32 @@ void normal_gameplay(){
 	statusBar();
 	// Only update timers if normal gameplay
 	calculate_timer();
-	
+	updateADCs();
 	move_tom();
 	draw_tom();
 	draw_jerry();
 	draw_all_cheeses();
 	draw_all_traps();
-	if (jerryScore > 4 && door.onScreen == 0)
+	if (jerryScore > 4 && door.onScreen == 0 && levelNum == 1)
 	{
 		create_door();
 	}
 	draw_door();
-	
+	nextLevelButton();
+	if (jerryScore > 2)
+	{
+		fireworks();
+	}
 	// PUT ALL DRAWING ABOVE THIS
 	spawn_cheese();
 	spawn_traps();
 	check_for_cheese();
 	check_for_traps();
 	check_for_door();
-
-	
-	
 	// DEBUGGING DRAWING
 	// SET_BIT(PORTB, 3);
-	// draw_int(5,20,0,1,0);
-	// draw_int(5,30,counter,1,0);
+	draw_int(5,20,left_adc,1,0);
+	draw_int(5,30,right_adc,1,0);
 	// draw_int(30,20,gameTime + 2 ,1,0);
 	// draw_int(30,30,cheese_secs,1,0);
 	
@@ -967,7 +1078,7 @@ void pause_check(){
 
 void setup() {
 	set_clock_speed(CPU_8MHz);
-	
+	adc_init();
 	lcd_init(LCD_DEFAULT_CONTRAST);
 	lcd_clear();
 	clear_screen();
@@ -1005,18 +1116,6 @@ int main(void) {
 	}
 }
 
-// ISR(TIMER1_OVF_vect){
-// 	if (BIT_IS_SET(PORTB, 2))
-// 	{
-// 		SET_BIT(PORTB, 2);
-// 	}
-// 	else
-// 	{
-// 		CLEAR_BIT(PORTB, 2);
-// 	}
-	
-// }
-
 ISR(TIMER0_OVF_vect){
 	timeCounter++;
 	
@@ -1030,64 +1129,64 @@ ISR(TIMER0_OVF_vect){
 
 	// Different tolerances of mask for different buttons
 	uint8_t low_reponse_mask = 0b00000111;
-    uint8_t high_response_mask = 0b00000011;
+	uint8_t high_response_mask = 0b00000011;
 
-    SW3Counter = SW3Counter & low_reponse_mask;
+	SW3Counter = SW3Counter & low_reponse_mask;
 	SW2Counter = SW2Counter & low_reponse_mask;
-    JoystickUpCounter = JoystickUpCounter & high_response_mask;
-    JoystickDownCounter = JoystickDownCounter & high_response_mask;
-    JoystickLeftCounter = JoystickLeftCounter & high_response_mask;
-    JoystickRightCounter = JoystickRightCounter & high_response_mask;
+	JoystickUpCounter = JoystickUpCounter & high_response_mask;
+	JoystickDownCounter = JoystickDownCounter & high_response_mask;
+	JoystickLeftCounter = JoystickLeftCounter & high_response_mask;
+	JoystickRightCounter = JoystickRightCounter & high_response_mask;
 	JoystickCentreCounter = JoystickCentreCounter & low_reponse_mask;
 
-    SW3Counter = SW3Counter|BIT_IS_SET(PINF, 5);
+	SW3Counter = SW3Counter|BIT_IS_SET(PINF, 5);
 	SW2Counter = SW2Counter|BIT_IS_SET(PINF, 6);
-    JoystickUpCounter = JoystickUpCounter|BIT_IS_SET(PIND, 1);
-    JoystickDownCounter = JoystickDownCounter|BIT_IS_SET(PINB, 7);
-    JoystickLeftCounter = JoystickLeftCounter|BIT_IS_SET(PINB, 1);
-    JoystickRightCounter = JoystickRightCounter|BIT_IS_SET(PIND, 0);
+	JoystickUpCounter = JoystickUpCounter|BIT_IS_SET(PIND, 1);
+	JoystickDownCounter = JoystickDownCounter|BIT_IS_SET(PINB, 7);
+	JoystickLeftCounter = JoystickLeftCounter|BIT_IS_SET(PINB, 1);
+	JoystickRightCounter = JoystickRightCounter|BIT_IS_SET(PIND, 0);
 	JoystickCentreCounter = JoystickCentreCounter|BIT_IS_SET(PINB, 0);
 
-    if(SW3Counter == 7){
-        SW3State = 1;
+	if(SW3Counter == 7){
+		SW3State = 1;
 	}
 	else if(SW3Counter == 0){
-        SW3State = 0;
-    }
+		SW3State = 0;
+	}
 	if(SW2Counter == 7){
-        SW2State = 1;
+		SW2State = 1;
 	}
 	else if(SW2Counter == 0){
-        SW2State = 0;
-    }
+		SW2State = 0;
+	}
 	if(JoystickUpCounter == 3){
-        JoystickUpState = 1;
+		JoystickUpState = 1;
 	}
 	else if(JoystickUpCounter == 0){
-        JoystickUpState = 0;
-    }
+		JoystickUpState = 0;
+	}
 	if(JoystickDownCounter == 3){
-        JoystickDownState = 1;
+		JoystickDownState = 1;
 	}
 	else if(JoystickDownCounter == 0){
-        JoystickDownState = 0;
-    }
+		JoystickDownState = 0;
+	}
 	if(JoystickLeftCounter == 3){
-        JoystickLeftState = 1;
+		JoystickLeftState = 1;
 	}
 	else if(JoystickLeftCounter == 0){
-        JoystickLeftState = 0;
-    }
+		JoystickLeftState = 0;
+	}
 	if(JoystickRightCounter == 3){
-        JoystickRightState = 1;
+		JoystickRightState = 1;
 	}
 	else if(JoystickRightCounter == 0){
-        JoystickRightState = 0;
-    }
+		JoystickRightState = 0;
+	}
 	if(JoystickCentreCounter == 3){
-        JoystickCentreState = 1;
+		JoystickCentreState = 1;
 	}
 	else if(JoystickCentreCounter == 0){
-        JoystickCentreState = 0;
-    }
+		JoystickCentreState = 0;
+	}
 }
